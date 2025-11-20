@@ -87,99 +87,85 @@ export default function DeepMode({ apiUrl, onInspect }) {
                                 const newMsgs = [...prev]
                                 if (newMsgs[newMsgs.length - 1]?.role === 'assistant') {
                                     newMsgs[newMsgs.length - 1].content = aiResponse
-                                } else {
-                                    newMsgs.push({ role: 'assistant', content: aiResponse })
+                                } catch (error) {
+                                    console.error('Chat error:', error)
+                                    setMessages(prev => [...prev, {
+                                        role: 'error',
+                                        content: `❌ Error: ${error.message}`
+                                    }])
                                 }
-                                return newMsgs
-                            })
-                        } else if (data.type === 'debug') {
-                            onInspect('response', data.data)
-                        }
-                    }
-                }
-            }
 
-            setMessage('')
-            setFiles([])
-        } catch (error) {
-            console.error('Chat error:', error)
-            setMessages(prev => [...prev, {
-                role: 'error',
-                content: `❌ Error: ${error.message}`
-            }])
-        }
-
-        setLoading(false)
-    }
+                                setLoading(false)
+                            }
 
     return (
-        <div className="deep-mode">
-            <div className="controls">
-                <div className="control-group">
-                    <label>Thinking Level:</label>
-                    <select value={thinkingLevel} onChange={(e) => setThinkingLevel(e.target.value)}>
-                        <option value="low">Low (Fast)</option>
-                        <option value="high">High (Detailed Reasoning)</option>
-                    </select>
-                </div>
+                                <div className="deep-mode">
+                                    <div className="controls">
+                                        <div className="control-group">
+                                            <label>Thinking Level:</label>
+                                            <select value={thinkingLevel} onChange={(e) => setThinkingLevel(e.target.value)}>
+                                                <option value="low">Low (Fast)</option>
+                                                <option value="high">High (Detailed Reasoning)</option>
+                                            </select>
+                                        </div>
 
-                <div className="control-group">
-                    <label>Media Resolution:</label>
-                    <select value={mediaResolution} onChange={(e) => setMediaResolution(e.target.value)}>
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High (Best for details)</option>
-                    </select>
-                </div>
+                                        <div className="control-group">
+                                            <label>Media Resolution:</label>
+                                            <select value={mediaResolution} onChange={(e) => setMediaResolution(e.target.value)}>
+                                                <option value="low">Low</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="high">High (Best for details)</option>
+                                            </select>
+                                        </div>
 
-                <div className="control-group">
-                    <label>Upload Files:</label>
-                    <input
-                        type="file"
-                        multiple
-                        onChange={handleFileUpload}
-                        accept="image/*,video/*,audio/*,.pdf"
-                    />
-                </div>
-            </div>
+                                        <div className="control-group">
+                                            <label>Upload Files:</label>
+                                            <input
+                                                type="file"
+                                                multiple
+                                                onChange={handleFileUpload}
+                                                accept="image/*,video/*,audio/*,.pdf"
+                                            />
+                                        </div>
+                                    </div>
 
-            {files.length > 0 && (
-                <div className="file-chips">
-                    {files.map((uri, i) => (
-                        <span key={i} className="chip">📎 File {i + 1}</span>
-                    ))}
-                </div>
-            )}
+                                    {files.length > 0 && (
+                                        <div className="file-chips">
+                                            {files.map((uri, i) => (
+                                                <span key={i} className="chip">📎 File {i + 1}</span>
+                                            ))}
+                                        </div>
+                                    )}
 
-            <div className="messages">
-                {messages.map((msg, i) => (
-                    <div key={i} className={`message-bubble ${msg.role}-message`}>
-                        {msg.content}
-                    </div>
-                ))}
-            </div>
+                                    <div className="messages">
+                                        {messages.map((msg, i) => (
+                                            <div key={i} className={`message-bubble ${msg.role}-message`}>
+                                                {msg.content}
+                                            </div>
+                                        ))}
+                                    </div>
 
-            <div className="input-area">
-                <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Ask Gemini 3 Pro anything..."
-                    rows={3}
-                    onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault()
-                            handleSend()
+                                    <div className="input-area">
+                                        <textarea
+                                            value={message}
+                                            onChange={(e) => setMessage(e.target.value)}
+                                            placeholder="Ask Gemini 3 Pro anything..."
+                                            rows={3}
+                                            onKeyPress={(e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault()
+                                                    handleSend()
+                                                }
+                                            }}
+                                        />
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={handleSend}
+                                            disabled={loading}
+                                        >
+                                            {loading ? '⏳ Processing...' : '🚀 Send'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )
                         }
-                    }}
-                />
-                <button
-                    className="btn btn-primary"
-                    onClick={handleSend}
-                    disabled={loading}
-                >
-                    {loading ? '⏳ Processing...' : '🚀 Send'}
-                </button>
-            </div>
-        </div>
-    )
-}
