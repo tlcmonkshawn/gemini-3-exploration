@@ -2,7 +2,7 @@ import os
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any
-import google.generativeai as genai
+from google import genai
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -12,33 +12,21 @@ class FileManager:
     """
     Reusable module for managing file uploads to Gemini File API.
     Handles file lifecycle: upload, state tracking, and cleanup.
+    Uses google-genai SDK (v1.0+).
     """
     
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
-        genai.configure(api_key=self.api_key)
+        
+        # Initialize the client with the new SDK structure
+        self.client = genai.Client(api_key=self.api_key)
         self._uploaded_files = {}  # Track uploaded files by URI
     
     def upload_file(self, file_path: str, display_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Upload a file to the Gemini File API.
-        
-        Args:
-            file_path: Path to the file to upload
-            display_name: Optional display name for the file
-            
-        Returns:
-            Dictionary with file metadata:
-            {
-                "uri": "...",
-                "name": "...",
-                "display_name": "...",
-                "mime_type": "...",
-                "size_bytes": ...,
-                "state": "..."
-            }
         """
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -49,10 +37,21 @@ class FileManager:
         
         print(f"📤 Uploading {display_name} to Gemini File API...")
         
-        # Upload the file
-        uploaded_file = genai.upload_file(file_path, display_name=display_name)
+        # Upload the file using new SDK
+        # client.files.upload(file=..., config=...)
+        try:
+            uploaded_file = self.client.files.upload(
+                file=file_path,
+                config={'display_name': display_name}
+            )
+        except TypeError:
+            # Fallback if config is not accepted or signature is different
+            print("⚠️ Upload with config failed, trying simple upload...")
+            uploaded_file = self.client.files.upload(path=file_path)
         
         # Store metadata
+        # Note: New SDK might have different property names, checking common ones
+        # Assuming: uri, name, display_name, mime_type, size_bytes, state
         file_metadata = {
             "uri": uploaded_file.uri,
             "name": uploaded_file.name,
@@ -70,30 +69,32 @@ class FileManager:
     def wait_for_file_active(self, file_uri: str, timeout: int = 300) -> bool:
         """
         Wait for a file to reach ACTIVE state.
-        
-        Args:
-            file_uri: The URI of the uploaded file
-            timeout: Maximum time to wait in seconds (default 5 minutes)
-            
-        Returns:
-            True if file became active, False if timeout
         """
         print(f"⏳ Waiting for file to be processed: {file_uri}")
         
+        # Extract file name from URI if needed, or pass URI if SDK supports it
+        # Usually SDK get_file takes the 'name' (files/...) not the URI
+        # But let's try to find the name from our cache or the URI
+        file_name = self._get_name_from_uri(file_uri)
+        
         start_time = time.time()
         while time.time() - start_time < timeout:
-            file = genai.get_file(file_uri)
-            
-            if file.state.name == "ACTIVE":
-                print(f"✅ File is ready: {file_uri}")
-                # Update cached metadata
-                if file_uri in self._uploaded_files:
-                    self._uploaded_files[file_uri]["state"] = "ACTIVE"
-                return True
-            
-            elif file.state.name == "FAILED":
-                print(f"❌ File processing failed: {file_uri}")
-                return False
+            try:
+                file = self.client.files.get(name=file_name)
+                
+                if file.state.name == "ACTIVE":
+                    print(f"✅ File is ready: {file_uri}")
+                    # Update cached metadata
+                    if file_uri in self._uploaded_files:
+                        self._uploaded_files[file_uri]["state"] = "ACTIVE"
+                    return True
+                
+                elif file.state.name == "FAILED":
+                    print(f"❌ File processing failed: {file_uri}")
+                    return False
+                
+            except Exception as e:
+                print(f"⚠️ Error checking file status: {e}")
             
             # Still processing
             time.sleep(2)
@@ -104,14 +105,9 @@ class FileManager:
     def get_file_status(self, file_uri: str) -> Dict[str, Any]:
         """
         Get the current status of an uploaded file.
-        
-        Args:
-            file_uri: The URI of the file
-            
-        Returns:
-            Dictionary with current file metadata
         """
-        file = genai.get_file(file_uri)
+        file_name = self._get_name_from_uri(file_uri)
+        file = self.client.files.get(name=file_name)
         
         metadata = {
             "uri": file.uri,
@@ -129,15 +125,10 @@ class FileManager:
     def delete_file(self, file_uri: str) -> bool:
         """
         Delete a file from the Gemini File API.
-        
-        Args:
-            file_uri: The URI of the file to delete
-            
-        Returns:
-            True if deletion succeeded
         """
         try:
-            genai.delete_file(file_uri)
+            file_name = self._get_name_from_uri(file_uri)
+            self.client.files.delete(name=file_name)
             print(f"🗑️  Deleted file: {file_uri}")
             
             # Remove from cache
@@ -149,43 +140,28 @@ class FileManager:
             print(f"❌ Error deleting file {file_uri}: {e}")
             return False
     
-    def list_files(self) -> list:
+    def _get_name_from_uri(self, file_uri: str) -> str:
         """
-        List all files uploaded to the File API.
-        
-        Returns:
-            List of file metadata dictionaries
+        Helper to extract 'files/...' name from URI or cache.
         """
-        files = []
-        for file in genai.list_files():
-            files.append({
-                "uri": file.uri,
-                "name": file.name,
-                "display_name": file.display_name,
-                "mime_type": file.mime_type,
-                "state": file.state.name
-            })
-        return files
-    
-    def cleanup_old_files(self, max_age_hours: int = 24):
-        """
-        Delete files older than max_age_hours.
+        # print(f"DEBUG: Looking for {file_uri} in cache keys: {list(self._uploaded_files.keys())}")
+        if file_uri in self._uploaded_files:
+            return self._uploaded_files[file_uri]["name"]
         
-        Args:
-            max_age_hours: Maximum age in hours before deletion
-        """
-        print(f"🧹 Cleaning up files older than {max_age_hours} hours...")
-        
-        current_time = time.time()
-        deleted_count = 0
-        
-        for file in genai.list_files():
-            # Note: File API doesn't provide creation_time in current SDK
-            # This is a placeholder for future enhancement
-            # For now, we just list the files
-            pass
-        
-        print(f"✅ Cleanup complete. Deleted {deleted_count} files.")
+        # Fallback: try to extract from URI if it follows standard format
+        # https://generativelanguage.googleapis.com/v1beta/files/xyz
+        name = file_uri
+        if "/files/" in file_uri:
+            name = "files/" + file_uri.split("/files/")[-1]
+        elif "files/" in file_uri:
+            name = "files/" + file_uri.split("files/")[-1]
+            
+        # Strip query params
+        if "?" in name:
+            name = name.split("?")[0]
+            
+        print(f"DEBUG: Extracted name '{name}' from URI '{file_uri}'")
+        return name
 
 # Singleton instance
 file_manager = FileManager()

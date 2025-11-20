@@ -32,10 +32,12 @@ async def upload_file(file: UploadFile = File(...)):
     """
     try:
         # Save uploaded file to temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+        # Use a simpler temp file approach to avoid permission issues on Windows/Linux mix
+        tmp_path = f"temp_{file.filename}"
+        with open(tmp_path, "wb") as f:
+            f.write(await file.read())
+        
+        print(f"DEBUG: Received file {file.filename}, saved to {tmp_path}")
         
         # Upload to Gemini File API
         file_metadata = file_manager.upload_file(tmp_path, display_name=file.filename)
@@ -45,7 +47,8 @@ async def upload_file(file: UploadFile = File(...)):
             raise HTTPException(status_code=500, detail="File processing timeout")
         
         # Clean up temp file
-        os.unlink(tmp_path)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
         
         return UploadResponse(
             file_uri=file_metadata["uri"],
@@ -55,9 +58,10 @@ async def upload_file(file: UploadFile = File(...)):
         )
         
     except Exception as e:
+        print(f"ERROR in upload_endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     """
     Send a message to Gemini 3 Pro with optional file attachments.
