@@ -66,8 +66,10 @@ async def chat(request: ChatRequest):
         generation_config = {}
         
         # Configure thinking level (for Gemini 3)
-        if request.thinking_level:
-            generation_config["thinking_level"] = request.thinking_level.upper()
+        # NOTE: SDK v0.8.5 does not support 'thinking_level' in GenerationConfig yet.
+        # Default behavior for Gemini 3 Pro is High Thinking, so we omit it for now.
+        # if request.thinking_level:
+        #     generation_config["thinking_level"] = request.thinking_level.upper()
         
         # Get Gemini 3 Pro model
         model = gemini_client.get_model(
