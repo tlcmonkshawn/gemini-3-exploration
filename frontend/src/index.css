@@ -1,0 +1,125 @@
+:root {
+  --bg-primary: #0a0e1a;
+  --bg-glass: rgba(255, 255, 255, 0.05);
+  --border-glass: rgba(255, 255, 255, 0.1);
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --accent-blue: #4a9eff;
+  --accent-purple: #a855f7;
+  --accent-green: #10b981;
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: linear-gradient(135deg, #0a0e1a 0%, #1a1e3a 100%);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-glass);
+  border-radius: 12px;
+  box-shadow: var(--shadow-glass);
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  color: white;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+}
+
+input, textarea {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.tab-container {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.tab {
+  padding: 12px 24px;
+  background: transparent;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tab.active {
+  background: var(--bg-glass);
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.user-message {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  margin-left: auto;
+  max-width: 70%;
+}
+
+.ai-message {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-glass);
+  max-width: 70%;
+}
+
+code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}

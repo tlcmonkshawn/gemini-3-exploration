@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
-.env
+backend/.env
 
 # Node
 node_modules/
@@ -16,3 +16,6 @@ dist/
 
 # Logs
 *.log
+
+# Secrets
+gce_key
