@@ -134,6 +134,11 @@ export default function LiveMode({ apiUrl, onInspect }) {
 
     const startMedia = async () => {
         try {
+            // Check if getUserMedia is available (requires HTTPS or localhost)
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('Camera/microphone access requires HTTPS. Please access this site via HTTPS or localhost.')
+            }
+
             const constraints = {
                 audio: {
                     sampleRate: 16000,
