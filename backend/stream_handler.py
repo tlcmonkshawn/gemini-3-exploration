@@ -41,10 +41,7 @@ class StreamHandler:
         try:
             # Connect to Gemini Live API
             print(f"🔌 Connecting to Gemini Live API with model: {model_name}")
-            gemini_ws = await websockets.connect(
-                self.live_api_url,
-                extra_headers={"Content-Type": "application/json"}
-            )
+            gemini_ws = await websockets.connect(self.live_api_url)
             
             # Send initial setup message to Gemini
             setup_message = {
