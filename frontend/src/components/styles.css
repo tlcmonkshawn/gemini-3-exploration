@@ -406,3 +406,45 @@
 .btn-danger:hover {
     background: linear-gradient(135deg, #dc2626, #b91c1c);
 }
+
+/* Video Preview */
+.video-preview {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    margin: 20px auto;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    background: #000;
+}
+
+.video-preview video {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.video-label {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600;
+}
+
+.toggle-label input[type=" checkbox\]

@@ -12,7 +12,8 @@ export default function LiveMode({ apiUrl, onInspect }) {
     const mediaStreamRef = useRef(null)
     const audioContextRef = useRef(null)
     const mediaRecorderRef = useRef(null)
-    const audioChunksRef = useRef([])
+    const videoRef = useRef(null)
+    const videoFrameIntervalRef = useRef(null)
 
     useEffect(() => {
         return () => {
@@ -29,6 +30,9 @@ export default function LiveMode({ apiUrl, onInspect }) {
         }
         if (audioContextRef.current) {
             audioContextRef.current.close()
+        }
+        if (videoFrameIntervalRef.current) {
+            clearInterval(videoFrameIntervalRef.current)
         }
     }
 
@@ -51,13 +55,11 @@ export default function LiveMode({ apiUrl, onInspect }) {
             if (data.type === 'debug') {
                 onInspect(data.debug_type, data.data)
             } else if (data.type === 'gemini_response') {
-                // Handle Gemini response
                 const responseData = data.data
 
                 if (responseData.serverContent) {
                     const content = responseData.serverContent
 
-                    // Handle text responses
                     if (content.modelTurn && content.modelTurn.parts) {
                         content.modelTurn.parts.forEach(part => {
                             if (part.text) {
@@ -67,16 +69,10 @@ export default function LiveMode({ apiUrl, onInspect }) {
                                 }])
                             }
 
-                            // Handle inline audio data
                             if (part.inlineData && part.inlineData.mimeType === 'audio/pcm') {
                                 playAudioChunk(part.inlineData.data)
                             }
                         })
-                    }
-
-                    // Handle tool calls or interruptions
-                    if (content.turnComplete) {
-                        console.log('Turn complete')
                     }
                 }
 
@@ -105,28 +101,24 @@ export default function LiveMode({ apiUrl, onInspect }) {
 
     const playAudioChunk = async (base64Audio) => {
         try {
-            // Decode base64 to raw PCM data
             const binaryString = atob(base64Audio)
             const bytes = new Uint8Array(binaryString.length)
             for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i)
             }
 
-            // Create audio context if needed
             if (!audioContextRef.current) {
                 audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-                    sampleRate: 24000 // Gemini Live uses 24kHz
+                    sampleRate: 24000
                 })
             }
 
-            // Convert PCM16 to float32
             const pcm16 = new Int16Array(bytes.buffer)
             const float32 = new Float32Array(pcm16.length)
             for (let i = 0; i < pcm16.length; i++) {
                 float32[i] = pcm16[i] / 32768.0
             }
 
-            // Create audio buffer and play
             const audioBuffer = audioContextRef.current.createBuffer(1, float32.length, 24000)
             audioBuffer.getChannelData(0).set(float32)
 
@@ -140,34 +132,48 @@ export default function LiveMode({ apiUrl, onInspect }) {
         }
     }
 
-    const startAudioRecording = async () => {
+    const startMedia = async () => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            const constraints = {
                 audio: {
                     sampleRate: 16000,
                     channelCount: 1,
                     echoCancellation: true,
                     noiseSuppression: true
-                }
-            })
+                },
+                video: videoEnabled ? {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 }
+                } : false
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints)
 
             mediaStreamRef.current = stream
             setAudioEnabled(true)
             setIsRecording(true)
 
-            // Create MediaRecorder for audio chunks
+            // Setup video preview
+            if (videoEnabled && videoRef.current) {
+                videoRef.current.srcObject = stream
+                videoRef.current.play()
+
+                // Start sending video frames
+                startVideoFrameCapture()
+            }
+
+            // Audio recording
             const mediaRecorder = new MediaRecorder(stream, {
                 mimeType: 'audio/webm;codecs=opus'
             })
 
             mediaRecorder.ondataavailable = async (event) => {
                 if (event.data.size > 0 && wsRef.current && connected) {
-                    // Convert audio to base64
                     const reader = new FileReader()
                     reader.onloadend = () => {
                         const base64Audio = reader.result.split(',')[1]
 
-                        // Send audio chunk to Gemini
                         const message = {
                             realtime_input: {
                                 media_chunks: [{
@@ -184,36 +190,79 @@ export default function LiveMode({ apiUrl, onInspect }) {
             }
 
             mediaRecorderRef.current = mediaRecorder
-            mediaRecorder.start(100) // Send chunks every 100ms
+            mediaRecorder.start(100)
 
+            const mediaTypes = videoEnabled ? 'audio and video' : 'audio'
             setMessages(prev => [...prev, {
                 role: 'system',
-                content: '🎤 Audio recording started'
+                content: `🎤 Recording ${mediaTypes} started`
             }])
 
         } catch (error) {
-            console.error('Error starting audio:', error)
+            console.error('Error starting media:', error)
             setMessages(prev => [...prev, {
                 role: 'error',
-                content: `❌ Microphone error: ${error.message}`
+                content: `❌ Media error: ${error.message}`
             }])
         }
     }
 
-    const stopAudioRecording = () => {
+    const startVideoFrameCapture = () => {
+        // Capture and send video frames at ~2 FPS to reduce bandwidth
+        videoFrameIntervalRef.current = setInterval(() => {
+            if (videoRef.current && wsRef.current && connected) {
+                const canvas = document.createElement('canvas')
+                canvas.width = 640
+                canvas.height = 360
+                const ctx = canvas.getContext('2d')
+                ctx.drawImage(videoRef.current, 0, 0, 640, 360)
+
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        const reader = new FileReader()
+                        reader.onloadend = () => {
+                            const base64Image = reader.result.split(',')[1]
+
+                            const message = {
+                                realtime_input: {
+                                    media_chunks: [{
+                                        mime_type: 'image/jpeg',
+                                        data: base64Image
+                                    }]
+                                }
+                            }
+
+                            wsRef.current.send(JSON.stringify(message))
+                        }
+                        reader.readAsDataURL(blob)
+                    }
+                }, 'image/jpeg', 0.8)
+            }
+        }, 500) // 2 FPS
+    }
+
+    const stopMedia = () => {
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop()
             setIsRecording(false)
         }
 
+        if (videoFrameIntervalRef.current) {
+            clearInterval(videoFrameIntervalRef.current)
+        }
+
         if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach(track => track.stop())
             setAudioEnabled(false)
+
+            if (videoRef.current) {
+                videoRef.current.srcObject = null
+            }
         }
 
         setMessages(prev => [...prev, {
             role: 'system',
-            content: '🎤 Audio recording stopped'
+            content: '⏹️ Recording stopped'
         }])
     }
 
@@ -251,26 +300,42 @@ export default function LiveMode({ apiUrl, onInspect }) {
                     </button>
                 )}
 
-                {connected && (
+                {connected && !isRecording && (
                     <div className="controls">
-                        {!isRecording ? (
-                            <button
-                                className="btn btn-success"
-                                onClick={startAudioRecording}
-                            >
-                                🎤 Start Voice Chat
-                            </button>
-                        ) : (
-                            <button
-                                className="btn btn-danger"
-                                onClick={stopAudioRecording}
-                            >
-                                ⏹️ Stop Recording
-                            </button>
-                        )}
+                        <label className="toggle-label">
+                            <input
+                                type="checkbox"
+                                checked={videoEnabled}
+                                onChange={(e) => setVideoEnabled(e.target.checked)}
+                            />
+                            📹 Enable Camera
+                        </label>
+
+                        <button
+                            className="btn btn-success"
+                            onClick={startMedia}
+                        >
+                            🎤 Start {videoEnabled ? 'Audio + Video' : 'Voice Chat'}
+                        </button>
                     </div>
                 )}
+
+                {isRecording && (
+                    <button
+                        className="btn btn-danger"
+                        onClick={stopMedia}
+                    >
+                        ⏹️ Stop Recording
+                    </button>
+                )}
             </div>
+
+            {videoEnabled && isRecording && (
+                <div className="video-preview">
+                    <video ref={videoRef} autoPlay muted playsInline />
+                    <div className="video-label">📹 Your Camera</div>
+                </div>
+            )}
 
             <div className="messages">
                 {messages.map((msg, i) => (
@@ -280,7 +345,7 @@ export default function LiveMode({ apiUrl, onInspect }) {
                 ))}
             </div>
 
-            {connected && (
+            {connected && !isRecording && (
                 <div className="quick-actions">
                     <p style={{ color: 'var(--text-secondary)', marginBottom: '10px' }}>
                         Quick text messages:
@@ -288,23 +353,21 @@ export default function LiveMode({ apiUrl, onInspect }) {
                     <button
                         className="btn"
                         onClick={() => sendMessage('Hello! How are you?')}
-                        disabled={isRecording}
                     >
                         👋 Say Hello
                     </button>
                     <button
                         className="btn"
                         onClick={() => sendMessage('Tell me a joke')}
-                        disabled={isRecording}
                     >
                         😂 Tell a Joke
                     </button>
                     <button
                         className="btn"
-                        onClick={() => sendMessage('What can you help me with?')}
-                        disabled={isRecording}
+                        onClick={() => sendMessage('What can you see in this image?')}
+                        disabled={!videoEnabled}
                     >
-                        💡 Ask Capabilities
+                        👁️ Describe What You See
                     </button>
                 </div>
             )}
@@ -312,7 +375,7 @@ export default function LiveMode({ apiUrl, onInspect }) {
             {isRecording && (
                 <div className="recording-indicator">
                     <div className="pulse"></div>
-                    <span>Listening...</span>
+                    <span>{videoEnabled ? '🎥 Recording video + audio' : '🎤 Listening...'}</span>
                 </div>
             )}
         </div>
