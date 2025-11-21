@@ -12,11 +12,16 @@ from google.genai import types
 router = APIRouter(prefix="/api/deep", tags=["Deep Mode"])
 
 # Request/Response models
+class ChatMessage(BaseModel):
+    role: str  # "user" or "model"
+    parts: List[dict]  # Can contain text, file URIs, and thought_signature
+
 class ChatRequest(BaseModel):
     message: str
     file_uris: List[str] = []
     thinking_level: Optional[str] = "low"  # "low" or "high"
     media_resolution: Optional[str] = "medium"  # "low", "medium", or "high"
+    history: List[ChatMessage] = []  # Conversation history with thought signatures
 
 class UploadResponse(BaseModel):
     file_uri: str
@@ -71,26 +76,53 @@ async def chat_endpoint(request: ChatRequest):
     try:
         client = gemini_client.get_client()
         
-        # Build message contents
+        # Build conversation contents from history
         contents = []
+        
+        # Add conversation history
+        for msg in request.history:
+            parts = []
+            for part_dict in msg.parts:
+                if "text" in part_dict:
+                    parts.append(types.Part.from_text(text=part_dict["text"]))
+                elif "file_uri" in part_dict:
+                    parts.append(types.Part.from_uri(
+                        file_uri=part_dict["file_uri"],
+                        mime_type=part_dict.get("mime_type", "application/pdf")
+                    ))
+                elif "thought_signature" in part_dict:
+                    # Preserve thought_signature as bytes
+                    parts.append(types.Part(
+                        thought_signature=bytes.fromhex(part_dict["thought_signature"]) if isinstance(part_dict["thought_signature"], str) else part_dict["thought_signature"]
+                    ))
+            
+            contents.append(types.Content(
+                role=msg.role,
+                parts=parts
+            ))
+        
+        # Build current user message
+        current_parts = []
         
         # Add files if present
         for file_uri in request.file_uris:
-            # The new SDK handles file URIs as Part objects
-            # We assume the URI is a string like "https://..." or a File API URI
-            # For File API URIs, we use types.Part.from_uri
-            # Fetch file metadata to get the correct mime_type
             try:
                 file_metadata = file_manager.get_file_status(file_uri)
                 mime_type = file_metadata.get("mime_type", "application/pdf")
             except Exception as e:
                 print(f"Warning: Could not fetch metadata for {file_uri}: {e}")
-                mime_type = "application/pdf" # Fallback
+                mime_type = "application/pdf"
 
-            contents.append(types.Part.from_uri(file_uri=file_uri, mime_type=mime_type))
+            current_parts.append(types.Part.from_uri(file_uri=file_uri, mime_type=mime_type))
 
         # Add text message
-        contents.append(types.Part.from_text(text=request.message))
+        current_parts.append(types.Part.from_text(text=request.message))
+        
+        # Add current user message to contents
+        contents.append(types.Content(
+            role="user",
+            parts=current_parts
+        ))
         
         # Configure thinking
         # thinking_level "HIGH" maps to include_thoughts=True in ThinkingConfig
@@ -121,6 +153,14 @@ async def chat_endpoint(request: ChatRequest):
                     # Check for text content
                     if chunk.text:
                         yield f"data: {json.dumps({'type': 'text', 'content': chunk.text})}\n\n"
+                    
+                    # Extract and send thought_signature if present
+                    if chunk.candidates and len(chunk.candidates) > 0:
+                        for part in chunk.candidates[0].content.parts:
+                            if hasattr(part, 'thought_signature') and part.thought_signature:
+                                # Convert bytes to hex string for JSON serialization
+                                sig_hex = part.thought_signature.hex()
+                                yield f"data: {json.dumps({'type': 'thought_signature', 'signature': sig_hex})}\n\n"
                         
                     # Send debug metadata (full chunk structure)
                     # We convert to dict/str for safe serialization

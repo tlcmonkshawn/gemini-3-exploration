@@ -6,6 +6,7 @@ export default function DeepMode({ apiUrl, onInspect }) {
     const [message, setMessage] = useState('')
     const [files, setFiles] = useState([])
     const [messages, setMessages] = useState([])
+    const [conversationHistory, setConversationHistory] = useState([]) // For API with thought signatures
     const [loading, setLoading] = useState(false)
     const [thinkingLevel, setThinkingLevel] = useState('low')
     const [mediaResolution, setMediaResolution] = useState('medium')
@@ -48,14 +49,25 @@ export default function DeepMode({ apiUrl, onInspect }) {
         if (!message.trim() && files.length === 0) return
 
         setLoading(true)
-        setMessages(prev => [...prev, { role: 'user', content: message }])
+
+        // Build user message parts for display
+        const userDisplayMessage = message
+        setMessages(prev => [...prev, { role: 'user', content: userDisplayMessage }])
+
+        // Build user message parts for API (including files and text)
+        const userParts = []
+        for (const fileUri of files) {
+            userParts.push({ file_uri: fileUri })
+        }
+        userParts.push({ text: message })
 
         try {
             const requestPayload = {
                 message,
                 file_uris: files,
                 thinking_level: thinkingLevel,
-                media_resolution: mediaResolution
+                media_resolution: mediaResolution,
+                history: conversationHistory // Send full conversation history
             }
 
             onInspect('request', requestPayload)
@@ -69,6 +81,7 @@ export default function DeepMode({ apiUrl, onInspect }) {
             const reader = response.body.getReader()
             const decoder = new TextDecoder()
             let aiResponse = ''
+            let currentThoughtSignature = null
 
             while (true) {
                 const { done, value } = await reader.read()
@@ -92,6 +105,9 @@ export default function DeepMode({ apiUrl, onInspect }) {
                                 }
                                 return newMsgs
                             })
+                        } else if (data.type === 'thought_signature') {
+                            // Capture the thought signature for next request
+                            currentThoughtSignature = data.signature
                         } else if (data.type === 'debug') {
                             onInspect('response', data.data)
                         } else if (data.type === 'error') {
@@ -104,6 +120,27 @@ export default function DeepMode({ apiUrl, onInspect }) {
                     }
                 }
             }
+
+            // Update conversation history for next request
+            // Add user message
+            setConversationHistory(prev => [...prev, {
+                role: 'user',
+                parts: userParts
+            }])
+
+            // Add assistant message with thought signature
+            const assistantParts = []
+            if (aiResponse) {
+                assistantParts.push({ text: aiResponse })
+            }
+            if (currentThoughtSignature) {
+                assistantParts.push({ thought_signature: currentThoughtSignature })
+            }
+
+            setConversationHistory(prev => [...prev, {
+                role: 'model',
+                parts: assistantParts
+            }])
 
             setMessage('')
             // Keep files attached for follow-up questions
