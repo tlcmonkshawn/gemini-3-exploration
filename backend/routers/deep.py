@@ -62,6 +62,7 @@ async def upload_file(file: UploadFile = File(...)):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+@router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     """
     Send a message to Gemini 3 Pro with optional file attachments.
@@ -78,7 +79,15 @@ async def chat_endpoint(request: ChatRequest):
             # The new SDK handles file URIs as Part objects
             # We assume the URI is a string like "https://..." or a File API URI
             # For File API URIs, we use types.Part.from_uri
-            contents.append(types.Part.from_uri(file_uri=file_uri, mime_type="application/pdf")) # Defaulting to PDF for now, logic needed for others
+            # Fetch file metadata to get the correct mime_type
+            try:
+                file_metadata = file_manager.get_file_status(file_uri)
+                mime_type = file_metadata.get("mime_type", "application/pdf")
+            except Exception as e:
+                print(f"Warning: Could not fetch metadata for {file_uri}: {e}")
+                mime_type = "application/pdf" # Fallback
+
+            contents.append(types.Part.from_uri(file_uri=file_uri, mime_type=mime_type))
 
         # Add text message
         contents.append(types.Part.from_text(text=request.message))

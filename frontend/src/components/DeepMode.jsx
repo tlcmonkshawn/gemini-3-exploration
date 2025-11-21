@@ -106,7 +106,8 @@ export default function DeepMode({ apiUrl, onInspect }) {
             }
 
             setMessage('')
-            setFiles([])
+            // Keep files attached for follow-up questions
+            // setFiles([]) // Removed: files should persist in conversation
         } catch (error) {
             console.error('Chat error:', error)
             setMessages(prev => [...prev, {
@@ -138,24 +139,7 @@ export default function DeepMode({ apiUrl, onInspect }) {
                     </select>
                 </div>
 
-                <div className="control-group">
-                    <label>Upload Files:</label>
-                    <input
-                        type="file"
-                        multiple
-                        onChange={handleFileUpload}
-                        accept="image/*,video/*,audio/*,.pdf"
-                    />
-                </div>
             </div>
-
-            {files.length > 0 && (
-                <div className="file-chips">
-                    {files.map((uri, i) => (
-                        <span key={i} className="chip">📎 File {i + 1}</span>
-                    ))}
-                </div>
-            )}
 
             <div className="messages">
                 {messages.map((msg, i) => (
@@ -166,25 +150,70 @@ export default function DeepMode({ apiUrl, onInspect }) {
             </div>
 
             <div className="input-area">
-                <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Ask Gemini 3 Pro anything..."
-                    rows={3}
-                    onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault()
-                            handleSend()
-                        }
-                    }}
-                />
-                <button
-                    className="btn btn-primary"
-                    onClick={handleSend}
-                    disabled={loading}
-                >
-                    {loading ? '⏳ Processing...' : '🚀 Send'}
-                </button>
+                <div>
+                    <textarea
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        placeholder="Ask Gemini 3 Pro anything..."
+                        rows={3}
+                        onKeyPress={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault()
+                                handleSend()
+                            }
+                        }}
+                    />
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleSend}
+                        disabled={loading}
+                    >
+                        {loading ? '⏳ Processing...' : '🚀 Send'}
+                    </button>
+                </div>
+
+                <div className="file-upload-section">
+                    <input
+                        type="file"
+                        multiple
+                        onChange={handleFileUpload}
+                        accept="image/*,video/*,audio/*,.pdf"
+                        id="file-upload"
+                        style={{ display: 'none' }}
+                    />
+                    <label htmlFor="file-upload" className="btn btn-secondary">
+                        📎 Attach Files
+                    </label>
+
+                    {files.length > 0 && (
+                        <div className="attached-files">
+                            <div className="files-header">
+                                <strong>Attached Files ({files.length})</strong>
+                                <button
+                                    className="btn-link"
+                                    onClick={() => setFiles([])}
+                                    title="Clear all files"
+                                >
+                                    Clear All
+                                </button>
+                            </div>
+                            <div className="file-list">
+                                {files.map((uri, i) => (
+                                    <div key={i} className="file-item">
+                                        <span className="file-name">📎 File {i + 1}</span>
+                                        <button
+                                            className="btn-remove"
+                                            onClick={() => setFiles(files.filter((_, idx) => idx !== i))}
+                                            title={`Remove file ${i + 1}`}
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     )

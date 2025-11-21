@@ -19,3 +19,7 @@ dist/
 
 # Secrets
 gce_key
+
+# Environment files
+frontend/.env
+*.env
